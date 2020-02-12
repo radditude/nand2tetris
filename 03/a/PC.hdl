@@ -16,5 +16,31 @@ CHIP PC {
     OUT out[16];
 
     PARTS:
-    // Put your code here:
+    // reset is 1 -> output next cycle is 0
+    // load is 1  -> output next cycle is input
+    // inc is 1   -> output next cycle is output last cycle + 1
+    // if none are set, output stays the same
+    // they apply in the priority above - reset overrides load, which overrides inc
+
+    // find out if at least one of the three control bits is 1
+    // this will be important later
+    Or(a=load, b=reset, out=loadOrReset);
+    Or(a=loadOrReset, b=inc, out=registerLoad);
+
+    // increment! but do it based on the previous cycle's output
+    Inc16(in=registerOut, out=plusOne);
+    Mux16(a=false, b=plusOne, sel=inc, out=incrementedOut);
+
+    // let load bit override inc bit
+    Mux16(a=incrementedOut, b=in, sel=load, out=loadedOut);
+
+    // and let the reset bit in turn override the load bit
+    Mux16(a=loadedOut, b=false, sel=reset, out=resetOut);
+
+    // do we return this newly overriden thing? or should the output stay the same?
+    // the output should stay the same (e.g. be the thing previously loaded into the register)
+    // only if none of the control bits are set. Luckily, we figured that out earlier.
+    Register(in=resetOut, load=registerLoad, out=registerOut);
+    // this is just so we can feed the register output back into the Inc16 for the next loop
+    Or16(a=registerOut, b=registerOut, out=out);
 }
