@@ -37,7 +37,7 @@ func main() {
 
 	inputScanner := bufio.NewScanner(inputFile)
 	parser := Parser{inputScanner, true, "", "", "", "", ""}
-	codewriter := Codewriter{outputWriter}
+	codewriter := Codewriter{outputWriter, 1}
 
 	for parser.hasMoreCommands {
 		parser.advance()
