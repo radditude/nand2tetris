@@ -3,6 +3,8 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"regexp"
+	"strconv"
 )
 
 // Codewriter handles translating VM commands to
@@ -47,15 +49,13 @@ func (c *Codewriter) writeArithmetic(line string, command string) {
 
 func (c *Codewriter) writePushPop(line string, command string, arg1 string, arg2 string) {
 	c.startCommand(line)
-	if command == "push" {
-		c.writeOutputLine(fmt.Sprintf("@%s", arg2))
-		c.writeOutputLine("D=A\n@SP\nA=M\nM=D")
-		c.incrementPointer()
-	} else if command == "pop" {
-		c.decrementPointer()
-		c.writeOutputLine("D=M")
-	} else {
-		panic("command is not push or pop")
+	switch command {
+	case "push":
+		c.push(arg1, arg2)
+	case "pop":
+		c.pop(arg1, arg2)
+	default:
+		panic("unknown command")
 	}
 }
 
@@ -65,12 +65,90 @@ func (c *Codewriter) startCommand(line string) {
 	c.writeOutputLine(fmt.Sprintf("\n// %s", line))
 }
 
-func (c *Codewriter) incrementPointer() {
-	c.writeOutputLine("@SP\nM=M+1")
+func (c *Codewriter) push(arg1 string, arg2 string) {
+	isConstant := arg1 == "constant"
+	isDynamicSegment := isDynamicSegment(arg1)
+
+	if !isDynamicSegment {
+		c.writeOutputLine(getSegment(arg1, arg2))
+		c.writeOutputLine("D=M")
+		c.writeOutputLine("@SP")
+		c.writeOutputLine("A=M")
+	} else {
+		c.writeOutputLine(fmt.Sprintf("@%s", arg2))
+		c.writeOutputLine("D=A")
+		c.writeOutputLine(getSegment(arg1, arg2))
+		c.writeOutputLine("A=M")
+	}
+
+	if !isConstant && isDynamicSegment {
+		c.writeOutputLine("AD=D+A")
+		c.writeOutputLine("D=M")
+		c.writeOutputLine("@SP")
+		c.writeOutputLine("A=M")
+	}
+
+	c.writeOutputLine("M=D")
+	c.writeOutputLine("@SP")
+	c.writeOutputLine("M=M+1")
 }
 
-func (c *Codewriter) decrementPointer() {
-	c.writeOutputLine("@SP\nM=M-1")
+func (c *Codewriter) pop(arg1 string, arg2 string) {
+	isDynamicSegment := isDynamicSegment(arg1)
+	c.writeOutputLine("@SP")
+	c.writeOutputLine("M=M-1")
+
+	if isDynamicSegment {
+		c.writeOutputLine(fmt.Sprintf("@%s", arg2))
+		c.writeOutputLine("D=A")
+		c.writeOutputLine(getSegment(arg1, arg2))
+		c.writeOutputLine("A=M")
+		c.writeOutputLine("D=D+A")
+		c.writeOutputLine("@R13")
+		c.writeOutputLine("M=D")
+		c.writeOutputLine("@SP")
+	}
+
+	c.writeOutputLine("A=M")
+	c.writeOutputLine("D=M")
+
+	if isDynamicSegment {
+		c.writeOutputLine("@R13")
+		c.writeOutputLine("A=M")
+	} else {
+		c.writeOutputLine(getSegment(arg1, arg2))
+	}
+
+	c.writeOutputLine("M=D")
+}
+
+// TODO: there's probably a better way to do this
+func isDynamicSegment(segment string) bool {
+	re := regexp.MustCompile(segment)
+	return !re.MatchString("staticpointertemp")
+}
+
+func getSegment(segment string, position string) string {
+	if isDynamicSegment(segment) {
+		segments := map[string]string{
+			"constant": "@SP",
+			"local":    "@LCL",
+			"argument": "@ARG",
+			"this":     "@THIS",
+			"that":     "@THAT",
+		}
+		return segments[segment]
+	}
+
+	startingPoints := map[string]int64{
+		"pointer": 3,
+		"temp":    5,
+		"static":  16,
+	}
+
+	startingPoint := startingPoints[segment]
+	positionInt, _ := strconv.ParseInt(position, 10, 64)
+	return fmt.Sprintf("@%d", startingPoint+positionInt)
 }
 
 // starts all arithmetic/logical commands except neg and not
